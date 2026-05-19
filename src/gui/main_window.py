@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
 )
 
+from ..config import config
 from .chat_widget import ChatWidget
 from .cost_widget import CostWidget
 from .settings_dialog import SettingsDialog
@@ -247,7 +248,3 @@ class MainWindow(QMainWindow):
         # 更新子组件
         self.chat_widget.apply_theme()
         self.cost_widget.apply_theme()
-
-
-# 延迟导入避免循环引用
-from ..config import config
