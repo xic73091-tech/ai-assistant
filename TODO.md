@@ -102,7 +102,7 @@ ai-assistant/
 ## 备注 / Notes
 - MiMo API使用小写模型名称：`mimo-v2.5-pro`, `mimo-v2.5`
 - MiMo Base URL: `https://token-plan-cn.xiaomimimo.com/v1`
-- 代理地址：`http://127.0.0.1:7897`
+- 代理地址：配置在本地环境变量中，勿公开
 - Windows编码修复：使用 `chcp 65001` 和 UTF-8 包装
 
 ---
