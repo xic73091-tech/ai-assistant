@@ -19,6 +19,16 @@ from PyQt6.QtWidgets import (
 from .chat_widget import ChatWidget
 from .cost_widget import CostWidget
 from .settings_dialog import SettingsDialog
+from .styles import (
+    Theme,
+    get_current_theme,
+    set_current_theme,
+    toggle_theme,
+    get_app_stylesheet,
+    get_nav_stylesheet,
+    get_nav_button_stylesheet,
+    get_label_color,
+)
 
 
 class NavButton(QPushButton):
@@ -29,16 +39,7 @@ class NavButton(QPushButton):
         self.setText(f" {text}")
         self.setFixedHeight(44)
         self.setCheckable(True)
-        self.setStyleSheet(
-            "NavButton {"
-            "  text-align: left; padding-left: 16px; border: none; border-radius: 8px;"
-            "  font-size: 14px; color: #555; background: transparent;"
-            "}"
-            "NavButton:hover { background-color: #E8E8E8; }"
-            "NavButton:checked {"
-            "  background-color: #D6EAF8; color: #2C3E50; font-weight: bold;"
-            "}"
-        )
+        self.setStyleSheet(get_nav_button_stylesheet())
 
 
 class MainWindow(QMainWindow):
@@ -62,16 +63,19 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
 
         # 左侧导航栏
-        nav_panel = QWidget()
-        nav_panel.setFixedWidth(180)
-        nav_panel.setStyleSheet("background-color: #F7F7F7; border-right: 1px solid #E0E0E0;")
-        nav_layout = QVBoxLayout(nav_panel)
+        self.nav_panel = QWidget()
+        self.nav_panel.setFixedWidth(180)
+        self.nav_panel.setStyleSheet(get_nav_stylesheet())
+        nav_layout = QVBoxLayout(self.nav_panel)
         nav_layout.setContentsMargins(8, 12, 8, 12)
         nav_layout.setSpacing(4)
 
         # Logo
         logo = QLabel("AI Assistant")
-        logo.setStyleSheet("font-size: 18px; font-weight: bold; color: #2C3E50; padding: 8px 12px 16px 12px;")
+        logo.setStyleSheet(
+            f"font-size: 18px; font-weight: bold; color: {get_label_color()}; "
+            "padding: 8px 12px 16px 12px;"
+        )
         nav_layout.addWidget(logo)
 
         # 导航按钮
@@ -91,11 +95,13 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
 
         # 版本信息
-        version_label = QLabel("v0.1.0")
-        version_label.setStyleSheet("color: #AAA; font-size: 11px; padding: 8px 12px;")
+        version_label = QLabel("v0.2.0")
+        version_label.setStyleSheet(
+            f"color: {get_label_color(secondary=True)}; font-size: 11px; padding: 8px 12px;"
+        )
         nav_layout.addWidget(version_label)
 
-        main_layout.addWidget(nav_panel)
+        main_layout.addWidget(self.nav_panel)
 
         # 右侧内容区域
         self.stack = QStackedWidget()
@@ -103,8 +109,8 @@ class MainWindow(QMainWindow):
         self.chat_widget = ChatWidget()
         self.cost_widget = CostWidget()
 
-        self.stack.addWidget(self.chat_widget)   # index 0
-        self.stack.addWidget(self.cost_widget)   # index 1
+        self.stack.addWidget(self.chat_widget)  # index 0
+        self.stack.addWidget(self.cost_widget)  # index 1
 
         main_layout.addWidget(self.stack, 1)
 
@@ -121,9 +127,10 @@ class MainWindow(QMainWindow):
 
         dialog = SettingsDialog(self)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
-            # 设置保存后刷新聊天组件的提供商列表
             self.chat_widget._update_model_list()
-            self.chat_widget.privacy_label.setText(f"隐私级别: {self.chat_widget.privacy_label.text().split(':')[-1].strip()}")
+            self.chat_widget.privacy_label.setText(
+                f"隐私级别: {config.get_privacy_level()}"
+            )
 
         self.nav_settings.setChecked(False)
         self._switch_page(self.stack.currentIndex())
@@ -166,6 +173,22 @@ class MainWindow(QMainWindow):
         cost_action.triggered.connect(lambda: self._switch_page(1))
         view_menu.addAction(cost_action)
 
+        view_menu.addSeparator()
+
+        # 主题切换
+        theme_menu = view_menu.addMenu("主题(&T)")
+        self.light_action = QAction("浅色主题", self)
+        self.light_action.setCheckable(True)
+        self.light_action.setChecked(get_current_theme() == Theme.LIGHT)
+        self.light_action.triggered.connect(lambda: self._switch_theme(Theme.LIGHT))
+        theme_menu.addAction(self.light_action)
+
+        self.dark_action = QAction("深色主题", self)
+        self.dark_action.setCheckable(True)
+        self.dark_action.setChecked(get_current_theme() == Theme.DARK)
+        self.dark_action.triggered.connect(lambda: self._switch_theme(Theme.DARK))
+        theme_menu.addAction(self.dark_action)
+
         # 帮助菜单
         help_menu = menu_bar.addMenu("帮助(&H)")
 
@@ -198,71 +221,33 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "关于 AI Assistant",
-            "<h3>AI Assistant v0.1.0</h3>"
+            "<h3>AI Assistant v0.2.0</h3>"
             "<p>本地化AI助手 - 解决回答不准、收费贵、隐私顾虑</p>"
-            "<p>支持 OpenAI / Claude / Ollama 多提供商</p>"
+            "<p>支持 OpenAI / Claude / Ollama / MiMo 多提供商</p>"
             "<p>作者: 守诚知</p>",
         )
 
     def _apply_global_style(self):
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #FFFFFF;
-            }
-            QMenuBar {
-                background-color: #F7F7F7;
-                border-bottom: 1px solid #E0E0E0;
-                padding: 2px;
-            }
-            QMenuBar::item:selected {
-                background-color: #D6EAF8;
-            }
-            QMenu {
-                background-color: white;
-                border: 1px solid #DDD;
-            }
-            QMenu::item:selected {
-                background-color: #D6EAF8;
-            }
-            QStatusBar {
-                background-color: #F7F7F7;
-                border-top: 1px solid #E0E0E0;
-                color: #888;
-            }
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #DDD;
-                border-radius: 6px;
-                margin-top: 12px;
-                padding-top: 16px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 12px;
-                padding: 0 4px;
-            }
-            QTableWidget {
-                border: 1px solid #DDD;
-                border-radius: 4px;
-                gridline-color: #EEE;
-            }
-            QTableWidget::item:selected {
-                background-color: #D6EAF8;
-            }
-            QHeaderView::section {
-                background-color: #F5F5F5;
-                border: none;
-                border-bottom: 2px solid #DDD;
-                padding: 6px;
-                font-weight: bold;
-            }
-            QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit {
-                padding: 4px 8px;
-                border: 1px solid #CCC;
-                border-radius: 4px;
-                background: white;
-            }
-            QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-                border-color: #4A90D9;
-            }
-        """)
+        self.setStyleSheet(get_app_stylesheet())
+
+    def _switch_theme(self, theme: Theme):
+        """切换主题"""
+        set_current_theme(theme)
+        self.light_action.setChecked(theme == Theme.LIGHT)
+        self.dark_action.setChecked(theme == Theme.DARK)
+
+        # 更新全局样式
+        self._apply_global_style()
+
+        # 更新导航栏
+        self.nav_panel.setStyleSheet(get_nav_stylesheet())
+        for btn in [self.nav_chat, self.nav_cost, self.nav_settings]:
+            btn.setStyleSheet(get_nav_button_stylesheet())
+
+        # 更新子组件
+        self.chat_widget.apply_theme()
+        self.cost_widget.apply_theme()
+
+
+# 延迟导入避免循环引用
+from ..config import config

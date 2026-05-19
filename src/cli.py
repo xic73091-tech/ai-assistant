@@ -1,6 +1,8 @@
 """CLI主程序"""
 
 import asyncio
+import io
+import os
 import sys
 from typing import Optional
 
@@ -26,7 +28,28 @@ from .storage import storage
 from .templates.manager import TemplateManager
 from .web_search import web_searcher
 
-console = Console()
+
+def _setup_windows_encoding():
+    """修复Windows中文环境下的编码问题"""
+    if sys.platform == "win32":
+        # 切换控制台代码页到UTF-8
+        os.system("chcp 65001 >nul 2>&1")
+        # 重新配置标准流的编码
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stdin, "reconfigure"):
+            sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+
+
+# 启动时立即修复编码
+_setup_windows_encoding()
+
+# 使用 replace 错误处理，避免 emoji 等特殊字符导致 UnicodeEncodeError
+console = Console(file=io.TextIOWrapper(
+    sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+) if sys.platform == "win32" and hasattr(sys.stdout, "buffer") else None)
 template_manager = TemplateManager()
 
 

@@ -1,5 +1,7 @@
 """成本追踪模块"""
 
+import io
+import sys
 from datetime import datetime
 from typing import Any, Optional
 
@@ -10,7 +12,10 @@ from .config import config
 from .providers.base import Usage
 from .storage import storage
 
-console = Console()
+# 使用 UTF-8 + replace 错误处理，兼容 Windows 中文环境
+console = Console(file=io.TextIOWrapper(
+    sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+) if sys.platform == "win32" and hasattr(sys.stdout, "buffer") else None)
 
 
 class CostTracker:
@@ -44,7 +49,7 @@ class CostTracker:
         recent_cost = storage.get_recent_cost(days=30)
         if recent_cost >= self.budget_alert:
             console.print(
-                f"[bold yellow]⚠ 警告：本月已花费 ${recent_cost:.2f}，"
+                f"[bold yellow][!] 警告：本月已花费 ${recent_cost:.2f}，"
                 f"超过预算阈值 ${self.budget_alert:.2f}[/bold yellow]"
             )
 

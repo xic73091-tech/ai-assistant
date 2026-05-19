@@ -1,6 +1,7 @@
 """聊天界面组件"""
 
 import asyncio
+import re
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -24,12 +25,315 @@ from ..config import config
 from ..privacy import privacy_protector
 from ..providers.base import ChatResponse, Message, Usage
 from ..providers.claude import ClaudeProvider
+from ..providers.mimo import MiMoProvider
 from ..providers.ollama import OllamaProvider
 from ..providers.openai import OpenAIProvider
 from ..storage import storage
 from ..cost_tracker import cost_tracker
 from ..templates.manager import TemplateManager
+from .styles import (
+    get_current_theme,
+    get_toolbar_stylesheet,
+    get_primary_button_stylesheet,
+    get_send_button_stylesheet,
+    get_message_style,
+    get_avatar_stylesheet,
+    get_input_stylesheet,
+    get_chat_background_color,
+    get_status_bar_stylesheet,
+    get_label_color,
+    get_history_panel_stylesheet,
+    get_history_stylesheet,
+)
 
+
+# ============ Markdown渲染器 ============
+
+class MarkdownRenderer:
+    """将Markdown文本转换为HTML，用于QTextEdit显示"""
+
+    @staticmethod
+    def to_html(text: str) -> str:
+        """将Markdown文本转换为HTML"""
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+        # 提取代码块，用占位符保护
+        code_blocks: list[tuple[str, str]] = []
+
+        def _save_code_block(match: re.Match) -> str:
+            lang = match.group(1) or ''
+            code = match.group(2)
+            idx = len(code_blocks)
+            code_blocks.append((lang, code))
+            return f'\x00CB{idx}\x00'
+
+        text = re.sub(r'```(\w*)\n(.*?)\n?```', _save_code_block, text, flags=re.DOTALL)
+
+        # 逐行处理
+        lines = text.split('\n')
+        html_parts: list[str] = []
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # 代码块占位符
+            cb_match = re.match(r'^\x00CB(\d+)\x00$', stripped)
+            if cb_match:
+                idx = int(cb_match.group(1))
+                lang, code = code_blocks[idx]
+                highlighted = SyntaxHighlighter.highlight(code, lang)
+                html_parts.append(
+                    '<pre style="background: #282C34; color: #ABB2BF; padding: 12px; '
+                    'border-radius: 6px; font-family: Consolas, \'Courier New\', monospace; '
+                    'font-size: 13px; display: block; white-space: pre-wrap; '
+                    'word-wrap: break-word;"><code>'
+                    f'{highlighted}</code></pre>'
+                )
+                i += 1
+                continue
+
+            # 标题
+            header_match = re.match(r'^(#{1,6})\s+(.+)$', line)
+            if header_match:
+                level = len(header_match.group(1))
+                content = MarkdownRenderer._process_inline(header_match.group(2))
+                size = max(14, 24 - (level - 1) * 2)
+                html_parts.append(
+                    f'<p style="font-size: {size}px; font-weight: bold; '
+                    f'margin: 8px 0 4px 0;">{content}</p>'
+                )
+                i += 1
+                continue
+
+            # 水平分割线
+            if re.match(r'^[-*_]{3,}\s*$', stripped):
+                html_parts.append(
+                    '<hr style="border: none; border-top: 1px solid #DDD; margin: 8px 0;">'
+                )
+                i += 1
+                continue
+
+            # 引用块
+            if stripped.startswith('>'):
+                content = MarkdownRenderer._process_inline(stripped[1:].strip())
+                html_parts.append(
+                    '<blockquote style="border-left: 3px solid #4A90D9; '
+                    'padding-left: 12px; color: #666; margin: 4px 0;">'
+                    f'{content}</blockquote>'
+                )
+                i += 1
+                continue
+
+            # 无序列表
+            ul_match = re.match(r'^[\s]*[-*+]\s+(.+)$', line)
+            if ul_match:
+                items: list[str] = []
+                while i < len(lines):
+                    m = re.match(r'^[\s]*[-*+]\s+(.+)$', lines[i])
+                    if m:
+                        items.append(MarkdownRenderer._process_inline(m.group(1)))
+                        i += 1
+                    else:
+                        break
+                html_parts.append(
+                    '<ul style="margin: 4px 0; padding-left: 20px;">'
+                    + ''.join(f'<li>{item}</li>' for item in items)
+                    + '</ul>'
+                )
+                continue
+
+            # 有序列表
+            ol_match = re.match(r'^[\s]*\d+\.\s+(.+)$', line)
+            if ol_match:
+                items = []
+                while i < len(lines):
+                    m = re.match(r'^[\s]*\d+\.\s+(.+)$', lines[i])
+                    if m:
+                        items.append(MarkdownRenderer._process_inline(m.group(1)))
+                        i += 1
+                    else:
+                        break
+                html_parts.append(
+                    '<ol style="margin: 4px 0; padding-left: 20px;">'
+                    + ''.join(f'<li>{item}</li>' for item in items)
+                    + '</ol>'
+                )
+                continue
+
+            # 空行
+            if not stripped:
+                html_parts.append('<br>')
+                i += 1
+                continue
+
+            # 普通文本段落
+            content = MarkdownRenderer._process_inline(line)
+            html_parts.append(f'<p style="margin: 2px 0;">{content}</p>')
+            i += 1
+
+        return '\n'.join(html_parts)
+
+    @staticmethod
+    def _process_inline(text: str) -> str:
+        """处理行内Markdown元素"""
+        # 先转义HTML
+        text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        # 行内代码（先处理以保护内容）
+        text = re.sub(
+            r'`([^`]+)`',
+            (
+                '<code style="background: #F0F0F0; padding: 2px 6px; border-radius: 3px; '
+                'font-family: Consolas, monospace; font-size: 13px;">\\1</code>'
+            ),
+            text,
+        )
+
+        # 加粗
+        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+        text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
+
+        # 斜体
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text)
+        text = re.sub(r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', r'<i>\1</i>', text)
+
+        # 删除线
+        text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
+
+        # 链接
+        text = re.sub(
+            r'\[([^\]]+)\]\(([^)]+)\)',
+            r'<a href="\2" style="color: #4A90D9;">\1</a>',
+            text,
+        )
+
+        return text
+
+
+# ============ 语法高亮器 ============
+
+class SyntaxHighlighter:
+    """简单的代码语法高亮器"""
+
+    PYTHON_KEYWORDS = {
+        'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await',
+        'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
+        'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is',
+        'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return',
+        'try', 'while', 'with', 'yield',
+    }
+
+    PYTHON_BUILTINS = {
+        'print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict',
+        'set', 'tuple', 'type', 'isinstance', 'hasattr', 'getattr', 'super',
+        'property', 'enumerate', 'zip', 'map', 'filter', 'sorted', 'reversed',
+        'any', 'all', 'min', 'max', 'sum', 'abs', 'round', 'open', 'input',
+        'format', 'repr', 'bool', 'bytes', 'object', 'vars', 'dir', 'callable',
+    }
+
+    JS_KEYWORDS = {
+        'async', 'await', 'break', 'case', 'catch', 'class', 'const',
+        'continue', 'debugger', 'default', 'delete', 'do', 'else', 'export',
+        'extends', 'false', 'finally', 'for', 'function', 'if', 'import',
+        'in', 'instanceof', 'let', 'new', 'null', 'return', 'super', 'switch',
+        'this', 'throw', 'true', 'try', 'typeof', 'undefined', 'var', 'void',
+        'while', 'with', 'yield',
+    }
+
+    SQL_KEYWORDS = {
+        'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL',
+        'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE',
+        'TABLE', 'DROP', 'ALTER', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER',
+        'ON', 'AS', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'UNION',
+        'ALL', 'DISTINCT', 'INDEX', 'VIEW',
+    }
+
+    SQL_BUILTINS = {'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'IF', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END'}
+
+    @classmethod
+    def highlight(cls, code: str, language: str = '') -> str:
+        """高亮代码并返回HTML（用<br>换行）"""
+        lang = language.lower().strip()
+        lines = code.split('\n')
+        result = [cls._highlight_line(line, lang) for line in lines]
+        return '<br>'.join(result)
+
+    @classmethod
+    def _highlight_line(cls, line: str, language: str) -> str:
+        """高亮单行代码"""
+        # 转义HTML
+        line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+        # 根据语言确定参数
+        if language in ('python', 'py'):
+            comment_char = '#'
+            keywords = cls.PYTHON_KEYWORDS
+            builtins = cls.PYTHON_BUILTINS
+        elif language in ('javascript', 'js', 'typescript', 'ts', 'jsx', 'tsx'):
+            comment_char = '//'
+            keywords = cls.JS_KEYWORDS
+            builtins = set()
+        elif language in ('sql',):
+            comment_char = '--'
+            keywords = cls.SQL_KEYWORDS
+            builtins = cls.SQL_BUILTINS
+        elif language in ('bash', 'sh', 'shell', 'zsh', 'ruby', 'rb'):
+            comment_char = '#'
+            keywords = set()
+            builtins = set()
+        else:
+            comment_char = '#'
+            keywords = set()
+            builtins = set()
+
+        # 整行注释
+        stripped = line.lstrip()
+        if comment_char and stripped.startswith(comment_char):
+            return f'<span style="color: #5C6370; font-style: italic;">{line}</span>'
+
+        # 高亮关键字
+        if keywords:
+            kw_pattern = '|'.join(re.escape(kw) for kw in keywords)
+            line = re.sub(
+                rf'\b({kw_pattern})\b',
+                r'<span style="color: #C678DD;">\1</span>',
+                line,
+            )
+
+        # 高亮内置函数/类型
+        if builtins:
+            bi_pattern = '|'.join(re.escape(bi) for bi in builtins)
+            line = re.sub(
+                rf'\b({bi_pattern})\b',
+                r'<span style="color: #61AFEF;">\1</span>',
+                line,
+            )
+
+        # 高亮数字
+        line = re.sub(
+            r'\b(\d+\.?\d*(?:[eE][+-]?\d+)?)\b',
+            r'<span style="color: #D19A66;">\1</span>',
+            line,
+        )
+
+        # 高亮字符串（HTML转义后的引号）
+        line = re.sub(
+            r'(&quot;)(?:(?!\1).)*?\1',
+            lambda m: f'<span style="color: #98C379;">{m.group()}</span>',
+            line,
+        )
+        line = re.sub(
+            r'(&#39;)(?:(?!\1).)*?\1',
+            lambda m: f'<span style="color: #98C379;">{m.group()}</span>',
+            line,
+        )
+
+        return line
+
+
+# ============ 后台工作线程 ============
 
 class ChatWorker(QThread):
     """后台线程执行AI请求"""
@@ -38,7 +342,13 @@ class ChatWorker(QThread):
     error_occurred = pyqtSignal(str)
     chunk_received = pyqtSignal(str)
 
-    def __init__(self, provider, messages: list[Message], model: Optional[str], stream: bool = True):
+    def __init__(
+        self,
+        provider,
+        messages: list[Message],
+        model: Optional[str],
+        stream: bool = True,
+    ):
         super().__init__()
         self.provider = provider
         self.messages = messages
@@ -75,8 +385,10 @@ class ChatWorker(QThread):
         )
 
 
+# ============ 消息气泡组件 ============
+
 class MessageBubble(QWidget):
-    """消息气泡"""
+    """消息气泡（独立组件，可用于自定义布局）"""
 
     def __init__(self, role: str, content: str, parent=None):
         super().__init__(parent)
@@ -84,29 +396,21 @@ class MessageBubble(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
 
-        # 头像标签
         avatar = QLabel("You" if role == "user" else "AI")
         avatar.setFixedSize(36, 36)
         avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        avatar.setStyleSheet(
-            "background-color: #4A90D9; color: white; border-radius: 18px; font-weight: bold; font-size: 11px;"
-            if role == "user"
-            else "background-color: #2ECC71; color: white; border-radius: 18px; font-weight: bold; font-size: 11px;"
-        )
+        avatar.setStyleSheet(get_avatar_stylesheet(role))
 
-        # 消息内容
         bubble = QTextEdit()
         bubble.setReadOnly(True)
-        bubble.setPlainText(content)
-        bubble.setStyleSheet(
-            "background-color: #DCF8C6; border-radius: 8px; padding: 8px; font-size: 14px;"
-            if role == "user"
-            else "background-color: #FFFFFF; border-radius: 8px; padding: 8px; font-size: 14px; border: 1px solid #E0E0E0;"
-        )
+        if role == "assistant":
+            bubble.setHtml(MarkdownRenderer.to_html(content))
+        else:
+            bubble.setPlainText(content)
+        bubble.setStyleSheet(get_message_style(role))
         bubble.setMaximumWidth(600)
         bubble.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         bubble.document().contentsChanged.connect(self._adjust_height)
-        # 触发一次高度调整
         bubble.setMinimumHeight(40)
         bubble.setMaximumHeight(400)
 
@@ -123,13 +427,37 @@ class MessageBubble(QWidget):
         doc = self.sender()
         if doc:
             height = int(doc.size().height()) + 16
-            self.sender().parent().setMinimumHeight(min(height, 400))
+            parent_widget = self.sender().parent()
+            if parent_widget:
+                parent_widget.setMinimumHeight(min(height, 400))
 
+
+# ============ 聊天主界面 ============
 
 class ChatWidget(QWidget):
     """聊天界面组件"""
 
     cost_updated = pyqtSignal(float)
+
+    # 提供商 -> 模型列表映射
+    PROVIDER_MODELS = {
+        "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "claude": [
+            "claude-sonnet-4-20250514",
+            "claude-haiku-4-5-20251001",
+            "claude-opus-4-7",
+        ],
+        "ollama": ["llama3", "mistral", "codellama"],
+        "mimo": ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2-pro", "mimo-v2-omni"],
+    }
+
+    # 提供商 -> 类映射（用于成本计算）
+    PROVIDER_CLASSES = {
+        "openai": OpenAIProvider,
+        "claude": ClaudeProvider,
+        "ollama": OllamaProvider,
+        "mimo": MiMoProvider,
+    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -137,6 +465,8 @@ class ChatWidget(QWidget):
         self.conversation_id: Optional[int] = None
         self.template_manager = TemplateManager()
         self.worker: Optional[ChatWorker] = None
+        self._stream_buffer = ""
+        self._stream_response_start = 0
         self._setup_ui()
         self._connect_signals()
         self._load_templates()
@@ -146,41 +476,41 @@ class ChatWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # 顶部工具栏
+        # ---- 顶部工具栏 ----
         toolbar = QWidget()
-        toolbar.setStyleSheet("background-color: #F5F5F5; border-bottom: 1px solid #DDD; padding: 6px;")
+        toolbar.setStyleSheet(get_toolbar_stylesheet())
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(10, 6, 10, 6)
 
-        # 提供商选择
         provider_label = QLabel("提供商:")
-        provider_label.setStyleSheet("font-weight: bold; color: #333;")
+        provider_label.setStyleSheet(f"font-weight: bold; color: {get_label_color()};")
         self.provider_combo = QComboBox()
-        self.provider_combo.addItems(["openai", "claude", "ollama"])
+        self.provider_combo.addItems(list(self.PROVIDER_MODELS.keys()))
         self.provider_combo.setCurrentText(config.get_default_provider())
-        self.provider_combo.setStyleSheet("padding: 4px 8px; border: 1px solid #CCC; border-radius: 4px; background: white;")
+        self.provider_combo.setStyleSheet(
+            "padding: 4px 8px; border: 1px solid #CCC; border-radius: 4px; background: white;"
+        )
 
-        # 模型选择
         model_label = QLabel("模型:")
-        model_label.setStyleSheet("font-weight: bold; color: #333;")
+        model_label.setStyleSheet(f"font-weight: bold; color: {get_label_color()};")
         self.model_combo = QComboBox()
         self.model_combo.setEditable(True)
         self._update_model_list()
-        self.model_combo.setStyleSheet("padding: 4px 8px; border: 1px solid #CCC; border-radius: 4px; background: white; min-width: 160px;")
+        self.model_combo.setStyleSheet(
+            "padding: 4px 8px; border: 1px solid #CCC; border-radius: 4px; "
+            "background: white; min-width: 160px;"
+        )
 
-        # 模板选择
         template_label = QLabel("模板:")
-        template_label.setStyleSheet("font-weight: bold; color: #333;")
+        template_label.setStyleSheet(f"font-weight: bold; color: {get_label_color()};")
         self.template_combo = QComboBox()
         self.template_combo.addItem("无", None)
-        self.template_combo.setStyleSheet("padding: 4px 8px; border: 1px solid #CCC; border-radius: 4px; background: white;")
-
-        # 新建对话按钮
-        self.new_chat_btn = QPushButton("新建对话")
-        self.new_chat_btn.setStyleSheet(
-            "QPushButton { background-color: #4A90D9; color: white; border: none; border-radius: 4px; padding: 6px 16px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #357ABD; }"
+        self.template_combo.setStyleSheet(
+            "padding: 4px 8px; border: 1px solid #CCC; border-radius: 4px; background: white;"
         )
+
+        self.new_chat_btn = QPushButton("新建对话")
+        self.new_chat_btn.setStyleSheet(get_primary_button_stylesheet())
 
         toolbar_layout.addWidget(provider_label)
         toolbar_layout.addWidget(self.provider_combo)
@@ -193,24 +523,21 @@ class ChatWidget(QWidget):
 
         layout.addWidget(toolbar)
 
-        # 对话历史侧边栏 + 聊天区域
+        # ---- 对话历史 + 聊天区域 ----
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # 历史列表
         history_panel = QWidget()
-        history_panel.setStyleSheet("background-color: #FAFAFA; border-right: 1px solid #DDD;")
+        history_panel.setStyleSheet(get_history_panel_stylesheet())
         history_layout = QVBoxLayout(history_panel)
         history_layout.setContentsMargins(8, 8, 8, 8)
 
         history_label = QLabel("对话历史")
-        history_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #333; padding: 4px 0;")
-        self.history_list = QListWidget()
-        self.history_list.setStyleSheet(
-            "QListWidget { border: none; background: transparent; }"
-            "QListWidget::item { padding: 8px; border-bottom: 1px solid #EEE; border-radius: 4px; }"
-            "QListWidget::item:selected { background-color: #D6EAF8; }"
-            "QListWidget::item:hover { background-color: #EBF5FB; }"
+        history_label.setStyleSheet(
+            f"font-weight: bold; font-size: 14px; color: {get_label_color()}; padding: 4px 0;"
         )
+        self.history_list = QListWidget()
+        self.history_list.setStyleSheet(get_history_stylesheet())
         history_layout.addWidget(history_label)
         history_layout.addWidget(self.history_list)
 
@@ -222,33 +549,28 @@ class ChatWidget(QWidget):
         chat_layout.setContentsMargins(0, 0, 0, 0)
         chat_layout.setSpacing(0)
 
-        # 消息显示区域
         self.message_display = QTextEdit()
         self.message_display.setReadOnly(True)
         self.message_display.setStyleSheet(
-            "background-color: #ECE5DD; border: none; padding: 10px; font-size: 14px;"
+            f"background-color: {get_chat_background_color()}; "
+            "border: none; padding: 10px; font-size: 14px;"
         )
 
         # 输入区域
         input_area = QWidget()
-        input_area.setStyleSheet("background-color: #F5F5F5; border-top: 1px solid #DDD; padding: 8px;")
+        input_area.setStyleSheet(
+            "background-color: #F5F5F5; border-top: 1px solid #DDD; padding: 8px;"
+        )
         input_layout = QHBoxLayout(input_area)
         input_layout.setContentsMargins(10, 8, 10, 8)
 
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText("输入消息... (Enter 发送)")
-        self.input_field.setStyleSheet(
-            "QLineEdit { border: 1px solid #CCC; border-radius: 20px; padding: 10px 16px; font-size: 14px; background: white; }"
-            "QLineEdit:focus { border-color: #4A90D9; }"
-        )
+        self.input_field.setStyleSheet(get_input_stylesheet())
 
         self.send_btn = QPushButton("发送")
         self.send_btn.setFixedSize(60, 40)
-        self.send_btn.setStyleSheet(
-            "QPushButton { background-color: #4A90D9; color: white; border: none; border-radius: 20px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #357ABD; }"
-            "QPushButton:disabled { background-color: #BDC3C7; }"
-        )
+        self.send_btn.setStyleSheet(get_send_button_stylesheet())
 
         input_layout.addWidget(self.input_field)
         input_layout.addWidget(self.send_btn)
@@ -263,20 +585,20 @@ class ChatWidget(QWidget):
 
         layout.addWidget(splitter, 1)
 
-        # 底部状态栏
+        # ---- 底部状态栏 ----
         status_bar = QWidget()
-        status_bar.setStyleSheet("background-color: #F0F0F0; border-top: 1px solid #DDD; padding: 4px 10px;")
+        status_bar.setStyleSheet(get_status_bar_stylesheet())
         status_layout = QHBoxLayout(status_bar)
         status_layout.setContentsMargins(10, 4, 10, 4)
 
         self.status_label = QLabel("就绪")
-        self.status_label.setStyleSheet("color: #666; font-size: 12px;")
+        self.status_label.setStyleSheet(f"color: {get_label_color(secondary=True)}; font-size: 12px;")
         self.cost_label = QLabel("费用: $0.0000")
-        self.cost_label.setStyleSheet("color: #888; font-size: 12px;")
+        self.cost_label.setStyleSheet(f"color: {get_label_color(secondary=True)}; font-size: 12px;")
         self.token_label = QLabel("Tokens: 0")
-        self.token_label.setStyleSheet("color: #888; font-size: 12px;")
+        self.token_label.setStyleSheet(f"color: {get_label_color(secondary=True)}; font-size: 12px;")
         self.privacy_label = QLabel(f"隐私级别: {config.get_privacy_level()}")
-        self.privacy_label.setStyleSheet("color: #888; font-size: 12px;")
+        self.privacy_label.setStyleSheet(f"color: {get_label_color(secondary=True)}; font-size: 12px;")
 
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
@@ -295,20 +617,16 @@ class ChatWidget(QWidget):
 
     def _load_templates(self):
         for t in self.template_manager.list_templates():
-            self.template_combo.addItem(f"{t['name']} - {t['description']}", t['name'])
+            self.template_combo.addItem(
+                f"{t['name']} - {t['description']}", t['name']
+            )
 
     def _update_model_list(self):
         provider = self.provider_combo.currentText()
         self.model_combo.clear()
-        models = {
-            "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
-            "claude": ["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001", "claude-opus-4-7"],
-            "ollama": ["llama3", "mistral", "codellama"],
-        }
-        self.model_combo.addItems(models.get(provider, []))
-        # 从配置获取默认模型
-        provider_config = config.get_provider_config(provider)
-        default_model = provider_config.get("model", "")
+        self.model_combo.addItems(self.PROVIDER_MODELS.get(provider, []))
+        provider_cfg = config.get_provider_config(provider)
+        default_model = provider_cfg.get("model", "")
         idx = self.model_combo.findText(default_model)
         if idx >= 0:
             self.model_combo.setCurrentIndex(idx)
@@ -319,13 +637,10 @@ class ChatWidget(QWidget):
     def _get_provider(self):
         name = self.provider_combo.currentText()
         provider_config = config.get_provider_config(name)
-        if name == "openai":
-            return OpenAIProvider(provider_config)
-        elif name == "claude":
-            return ClaudeProvider(provider_config)
-        elif name == "ollama":
-            return OllamaProvider(provider_config)
-        raise ValueError(f"不支持的提供商: {name}")
+        cls = self.PROVIDER_CLASSES.get(name)
+        if cls is None:
+            raise ValueError(f"不支持的提供商: {name}")
+        return cls(provider_config)
 
     def _new_conversation(self):
         self.messages.clear()
@@ -339,14 +654,24 @@ class ChatWidget(QWidget):
         if not text:
             return
 
-        # 隐私检查
-        has_sensitive, results = privacy_protector.detect(text)
+        # 如果上一个请求还在进行中，忽略
+        if self.worker and self.worker.isRunning():
+            return
+
+        # 隐私检查（修复：detect()返回列表，不是元组）
+        results = privacy_protector.detect(text)
+        has_sensitive = len(results) > 0
         if has_sensitive:
             masked = privacy_protector.mask(text)
+            types = ", ".join(set(r.type for r in results))
             reply = QMessageBox.question(
-                self, "隐私提示",
-                f"检测到敏感信息，是否自动脱敏后发送？\n\n原文: {text[:100]}...\n脱敏: {masked[:100]}...",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+                self,
+                "隐私提示",
+                f"检测到敏感信息 ({types})，是否自动脱敏后发送？\n\n"
+                f"原文: {text[:100]}...\n脱敏: {masked[:100]}...",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
             )
             if reply == QMessageBox.StandardButton.Cancel:
                 return
@@ -375,15 +700,21 @@ class ChatWidget(QWidget):
         messages_to_send = list(self.messages)
         if template_name:
             template_obj = self.template_manager.get_template(template_name)
-            if template_obj:
-                # 如果是第一条消息，加入系统提示词
-                if len(messages_to_send) == 1:
-                    messages_to_send.insert(0, Message(role="system", content=template_obj.get_system_prompt()))
+            if template_obj and len(messages_to_send) == 1:
+                messages_to_send.insert(
+                    0, Message(role="system", content=template_obj.get_system_prompt())
+                )
 
         # 禁用输入
         self.send_btn.setEnabled(False)
         self.input_field.setEnabled(False)
         self.status_label.setText("正在生成回复...")
+
+        # 准备流式输出
+        self._stream_buffer = ""
+        cursor = self.message_display.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self._stream_response_start = cursor.position()
 
         # 启动后台线程
         try:
@@ -395,20 +726,61 @@ class ChatWidget(QWidget):
             return
 
         model = self.model_combo.currentText() or None
-        self.worker = ChatWorker(provider, messages_to_send, model, stream=False)
+        self.worker = ChatWorker(provider, messages_to_send, model, stream=True)
         self.worker.response_ready.connect(self._on_response)
         self.worker.error_occurred.connect(self._on_error)
         self.worker.chunk_received.connect(self._on_chunk)
         self.worker.start()
 
+    def _on_chunk(self, chunk: str):
+        """流式输出：接收chunk并更新显示"""
+        self._stream_buffer += chunk
+        # 替换从流式起点到末尾的内容
+        cursor = self.message_display.textCursor()
+        cursor.setPosition(self._stream_response_start)
+        cursor.movePosition(
+            QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor
+        )
+        cursor.removeSelectedText()
+        # 用简单的HTML显示流式内容（不做Markdown渲染以提高性能）
+        escaped = (
+            self._stream_buffer
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('\n', '<br>')
+        )
+        style = get_message_style("assistant")
+        cursor.insertHtml(
+            f'<div style="margin: 8px 0; text-align: left;">'
+            f'<span style="{style}">{escaped}</span></div>'
+        )
+        self.message_display.setTextCursor(cursor)
+        self.message_display.ensureCursorVisible()
+
     def _on_response(self, response: ChatResponse):
-        self._append_message("assistant", response.content)
+        """请求完成：用Markdown渲染替换流式内容"""
+        # 替换流式内容为完整Markdown渲染
+        cursor = self.message_display.textCursor()
+        cursor.setPosition(self._stream_response_start)
+        cursor.movePosition(
+            QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor
+        )
+        cursor.removeSelectedText()
+
+        # 插入Markdown渲染后的消息
+        html = self._format_message_html("assistant", response.content)
+        cursor.insertHtml(html)
+        cursor.insertHtml('<br>')
+        self.message_display.setTextCursor(cursor)
+        self.message_display.ensureCursorVisible()
+
+        # 存储消息
         self.messages.append(Message(role="assistant", content=response.content))
 
         # 计算并记录成本
         provider_name = self.provider_combo.currentText()
-        provider_cls = {"openai": OpenAIProvider, "claude": ClaudeProvider, "ollama": OllamaProvider}
-        cls = provider_cls.get(provider_name)
+        cls = self.PROVIDER_CLASSES.get(provider_name)
         cost = cls.calculate_cost(response.usage, response.model) if cls else 0.0
         cost_tracker.record(
             provider=response.provider,
@@ -417,8 +789,11 @@ class ChatWidget(QWidget):
             cost=cost,
         )
         storage.add_message(
-            self.conversation_id, "assistant", response.content,
-            tokens=response.usage.total_tokens, cost=cost,
+            self.conversation_id,
+            "assistant",
+            response.content,
+            tokens=response.usage.total_tokens,
+            cost=cost,
         )
 
         self.cost_label.setText(f"费用: ${cost:.4f}")
@@ -430,53 +805,69 @@ class ChatWidget(QWidget):
         self._refresh_history()
 
     def _on_error(self, error_msg: str):
+        """请求出错：清理流式内容并显示错误"""
+        # 移除未完成的流式内容
+        cursor = self.message_display.textCursor()
+        cursor.setPosition(self._stream_response_start)
+        cursor.movePosition(
+            QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor
+        )
+        cursor.removeSelectedText()
+
         self._append_message("system", f"请求失败: {error_msg}")
         self.status_label.setText("错误")
         self.send_btn.setEnabled(True)
         self.input_field.setEnabled(True)
 
-    def _on_chunk(self, chunk: str):
-        # 流式模式下追加内容到当前显示
-        pass
-
     def _append_message(self, role: str, content: str):
+        """向消息显示区追加一条消息"""
         html = self._format_message_html(role, content)
-        self.message_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.message_display.insertHtml(html)
-        self.message_display.moveCursor(QTextCursor.MoveOperation.End)
+        cursor = self.message_display.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertHtml(html)
+        cursor.insertHtml('<br>')
+        self.message_display.setTextCursor(cursor)
+        self.message_display.ensureCursorVisible()
 
     def _format_message_html(self, role: str, content: str) -> str:
-        # 转义HTML
-        content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        content = content.replace("\n", "<br>")
+        """将消息格式化为HTML"""
+        style = get_message_style(role)
 
         if role == "user":
+            escaped = (
+                content.replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace('\n', '<br>')
+            )
             return (
                 f'<div style="margin: 8px 0; text-align: right;">'
-                f'<span style="background-color: #DCF8C6; padding: 8px 12px; border-radius: 12px; '
-                f'display: inline-block; max-width: 70%; text-align: left; font-size: 14px;">'
-                f'{content}</span></div>'
+                f'<span style="{style}">{escaped}</span></div>'
             )
         elif role == "assistant":
+            rendered = MarkdownRenderer.to_html(content)
             return (
                 f'<div style="margin: 8px 0; text-align: left;">'
-                f'<span style="background-color: #FFFFFF; padding: 8px 12px; border-radius: 12px; '
-                f'display: inline-block; max-width: 70%; text-align: left; font-size: 14px; '
-                f'border: 1px solid #E0E0E0;">'
-                f'{content}</span></div>'
+                f'<span style="{style}">{rendered}</span></div>'
             )
         else:  # system
+            escaped = (
+                content.replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+            )
             return (
                 f'<div style="margin: 4px 0; text-align: center;">'
-                f'<span style="color: #999; font-size: 12px; font-style: italic;">'
-                f'{content}</span></div>'
+                f'<span style="{style}">{escaped}</span></div>'
             )
 
     def _refresh_history(self):
         self.history_list.clear()
         conversations = storage.list_conversations(30)
         for conv in conversations:
-            item = QListWidgetItem(f"{conv['title']}\n{conv['provider']} | {conv['updated_at'][:16]}")
+            item = QListWidgetItem(
+                f"{conv['title']}\n{conv['provider']} | {conv['updated_at'][:16]}"
+            )
             item.setData(Qt.ItemDataRole.UserRole, conv['id'])
             self.history_list.addItem(item)
 
@@ -494,7 +885,6 @@ class ChatWidget(QWidget):
         self.messages.clear()
         self.message_display.clear()
 
-        # 设置提供商和模型
         idx = self.provider_combo.findText(conv['provider'])
         if idx >= 0:
             self.provider_combo.setCurrentIndex(idx)
@@ -502,10 +892,18 @@ class ChatWidget(QWidget):
         if idx >= 0:
             self.model_combo.setCurrentIndex(idx)
 
-        # 加载消息
         msgs = storage.get_conversation_messages(conversation_id)
         for msg in msgs:
             self._append_message(msg['role'], msg['content'])
             self.messages.append(Message(role=msg['role'], content=msg['content']))
 
         self.status_label.setText(f"已加载对话: {conv['title'][:30]}")
+
+    def apply_theme(self) -> None:
+        """应用当前主题样式（供外部调用）"""
+        from .styles import get_current_theme
+        theme = get_current_theme()
+        self.message_display.setStyleSheet(
+            f"background-color: {get_chat_background_color(theme)}; "
+            "border: none; padding: 10px; font-size: 14px;"
+        )

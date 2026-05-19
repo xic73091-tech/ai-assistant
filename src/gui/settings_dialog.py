@@ -30,7 +30,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("设置")
-        self.setMinimumSize(520, 480)
+        self.setMinimumSize(560, 520)
         self._setup_ui()
         self._load_current_settings()
 
@@ -69,7 +69,7 @@ class SettingsDialog(QDialog):
         default_group = QGroupBox("默认提供商")
         default_layout = QFormLayout(default_group)
         self.default_provider_combo = QComboBox()
-        self.default_provider_combo.addItems(["openai", "claude", "ollama"])
+        self.default_provider_combo.addItems(["openai", "claude", "ollama", "mimo"])
         default_layout.addRow("提供商:", self.default_provider_combo)
         layout.addWidget(default_group)
 
@@ -128,6 +128,29 @@ class SettingsDialog(QDialog):
         ollama_layout.addRow("温度:", self.ollama_temp)
         layout.addWidget(ollama_group)
 
+        # MiMo 配置
+        mimo_group = QGroupBox("MiMo (小米)")
+        mimo_layout = QFormLayout(mimo_group)
+        self.mimo_key = QLineEdit()
+        self.mimo_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.mimo_key.setPlaceholderText("MiMo API Key")
+        mimo_layout.addRow("API Key:", self.mimo_key)
+        self.mimo_url = QLineEdit()
+        self.mimo_url.setPlaceholderText("https://token-plan-cn.xiaomimimo.com/v1")
+        mimo_layout.addRow("Base URL:", self.mimo_url)
+        self.mimo_model = QLineEdit()
+        mimo_layout.addRow("模型:", self.mimo_model)
+        self.mimo_max_tokens = QSpinBox()
+        self.mimo_max_tokens.setRange(1, 128000)
+        self.mimo_max_tokens.setSingleStep(256)
+        mimo_layout.addRow("最大Tokens:", self.mimo_max_tokens)
+        self.mimo_temp = QDoubleSpinBox()
+        self.mimo_temp.setRange(0.0, 2.0)
+        self.mimo_temp.setSingleStep(0.1)
+        self.mimo_temp.setDecimals(2)
+        mimo_layout.addRow("温度:", self.mimo_temp)
+        layout.addWidget(mimo_group)
+
         layout.addStretch()
         return widget
 
@@ -140,13 +163,17 @@ class SettingsDialog(QDialog):
         level_layout = QFormLayout(level_group)
         self.privacy_combo = QComboBox()
         self.privacy_combo.addItem("低 - 仅检测身份证号、银行卡号和密码", "low")
-        self.privacy_combo.addItem("中 - 检测身份证号、手机号、银行卡号和密码", "medium")
+        self.privacy_combo.addItem(
+            "中 - 检测身份证号、手机号、银行卡号和密码", "medium"
+        )
         self.privacy_combo.addItem("高 - 检测所有敏感信息", "high")
         level_layout.addRow("级别:", self.privacy_combo)
 
         self.privacy_desc = QLabel()
         self.privacy_desc.setWordWrap(True)
-        self.privacy_desc.setStyleSheet("color: #666; padding: 8px; background: #F9F9F9; border-radius: 4px;")
+        self.privacy_desc.setStyleSheet(
+            "color: #666; padding: 8px; background: #F9F9F9; border-radius: 4px;"
+        )
         level_layout.addRow("", self.privacy_desc)
         self.privacy_combo.currentIndexChanged.connect(self._update_privacy_desc)
 
@@ -156,7 +183,9 @@ class SettingsDialog(QDialog):
         test_group = QGroupBox("隐私检测测试")
         test_layout = QVBoxLayout(test_group)
         self.test_input = QLineEdit()
-        self.test_input.setPlaceholderText("输入文本测试隐私检测，如: 我的手机号是13800138000")
+        self.test_input.setPlaceholderText(
+            "输入文本测试隐私检测，如: 我的手机号是13800138000"
+        )
         test_layout.addWidget(self.test_input)
 
         test_btn = QPushButton("测试检测")
@@ -165,7 +194,9 @@ class SettingsDialog(QDialog):
 
         self.test_result = QLabel()
         self.test_result.setWordWrap(True)
-        self.test_result.setStyleSheet("padding: 8px; background: #F0F0F0; border-radius: 4px;")
+        self.test_result.setStyleSheet(
+            "padding: 8px; background: #F0F0F0; border-radius: 4px;"
+        )
         self.test_result.hide()
         test_layout.addWidget(self.test_result)
 
@@ -221,15 +252,29 @@ class SettingsDialog(QDialog):
         # Claude
         claude_cfg = config.get_provider_config("claude")
         self.claude_key.setText(claude_cfg.get("api_key", ""))
-        self.claude_model.setText(claude_cfg.get("model", "claude-sonnet-4-20250514"))
+        self.claude_model.setText(
+            claude_cfg.get("model", "claude-sonnet-4-20250514")
+        )
         self.claude_max_tokens.setValue(claude_cfg.get("max_tokens", 4096))
         self.claude_temp.setValue(claude_cfg.get("temperature", 0.7))
 
         # Ollama
         ollama_cfg = config.get_provider_config("ollama")
-        self.ollama_url.setText(ollama_cfg.get("base_url", "http://localhost:11434"))
+        self.ollama_url.setText(
+            ollama_cfg.get("base_url", "http://localhost:11434")
+        )
         self.ollama_model.setText(ollama_cfg.get("model", "llama3"))
         self.ollama_temp.setValue(ollama_cfg.get("temperature", 0.7))
+
+        # MiMo
+        mimo_cfg = config.get_provider_config("mimo")
+        self.mimo_key.setText(mimo_cfg.get("api_key", ""))
+        self.mimo_url.setText(
+            mimo_cfg.get("base_url", "https://token-plan-cn.xiaomimimo.com/v1")
+        )
+        self.mimo_model.setText(mimo_cfg.get("model", "mimo-v2.5-pro"))
+        self.mimo_max_tokens.setValue(mimo_cfg.get("max_tokens", 4096))
+        self.mimo_temp.setValue(mimo_cfg.get("temperature", 0.7))
 
         # 隐私
         level = config.get_privacy_level()
@@ -266,6 +311,13 @@ class SettingsDialog(QDialog):
             config.set("providers.ollama.model", self.ollama_model.text())
             config.set("providers.ollama.temperature", self.ollama_temp.value())
 
+            # MiMo
+            config.set("providers.mimo.api_key", self.mimo_key.text())
+            config.set("providers.mimo.base_url", self.mimo_url.text())
+            config.set("providers.mimo.model", self.mimo_model.text())
+            config.set("providers.mimo.max_tokens", self.mimo_max_tokens.value())
+            config.set("providers.mimo.temperature", self.mimo_temp.value())
+
             # 隐私
             privacy_level = self.privacy_combo.currentData()
             config.set_privacy_level(privacy_level)
@@ -300,7 +352,7 @@ class SettingsDialog(QDialog):
         protector.level = level
         protector.enabled_levels = protector._get_enabled_levels()
 
-        has_sensitive, results = protector.detect(text)
+        has_sensitive, results = protector.check_and_warn(text)
         if has_sensitive:
             masked = protector.mask(text)
             types = ", ".join(set(r.type for r in results))
@@ -309,10 +361,14 @@ class SettingsDialog(QDialog):
                 f"原文: {text}\n"
                 f"脱敏: {masked}"
             )
-            self.test_result.setStyleSheet("padding: 8px; background: #FFF3CD; border-radius: 4px; color: #856404;")
+            self.test_result.setStyleSheet(
+                "padding: 8px; background: #FFF3CD; border-radius: 4px; color: #856404;"
+            )
         else:
             self.test_result.setText("未检测到敏感信息")
-            self.test_result.setStyleSheet("padding: 8px; background: #D4EDDA; border-radius: 4px; color: #155724;")
+            self.test_result.setStyleSheet(
+                "padding: 8px; background: #D4EDDA; border-radius: 4px; color: #155724;"
+            )
 
         self.test_result.show()
         protector.level = old_level
@@ -320,7 +376,9 @@ class SettingsDialog(QDialog):
 
     def _reset_config(self):
         reply = QMessageBox.question(
-            self, "确认", "确定要恢复默认配置吗？这将清除所有自定义设置。",
+            self,
+            "确认",
+            "确定要恢复默认配置吗？这将清除所有自定义设置。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

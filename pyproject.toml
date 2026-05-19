@@ -5,12 +5,39 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-assistant"
 version = "0.2.0"
-description = "本地化AI助手，解决回答不准、收费贵、隐私顾虑"
+description = "本地化AI助手 - 多AI聚合、隐私保护、成本追踪，解决回答不准、收费贵、隐私顾虑三大痛点"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
     { name = "守诚知", email = "shouchengzhi@example.com" },
+]
+keywords = [
+    "ai",
+    "assistant",
+    "openai",
+    "claude",
+    "ollama",
+    "privacy",
+    "chat",
+    "llm",
+    "local-ai",
+    "cost-tracking",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
 
 dependencies = [
@@ -40,7 +67,16 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
+    "build>=0.10.0",
+    "twine>=4.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/xic73091-tech/ai-assistant"
+Documentation = "https://github.com/xic73091-tech/ai-assistant#readme"
+Repository = "https://github.com/xic73091-tech/ai-assistant"
+Issues = "https://github.com/xic73091-tech/ai-assistant/issues"
+Changelog = "https://github.com/xic73091-tech/ai-assistant/blob/main/CHANGELOG.md"
 
 [project.scripts]
 ai-assistant = "src.cli:main"
@@ -48,6 +84,14 @@ ai-assistant-gui = "src.gui.app:run_gui"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+]
 
 [tool.black]
 line-length = 88

@@ -1,5 +1,10 @@
 # AI Assistant / AI助手
 
+[![PyPI version](https://img.shields.io/pypi/v/ai-assistant.svg)](https://pypi.org/project/ai-assistant/)
+[![Python versions](https://img.shields.io/pypi/pyversions/ai-assistant.svg)](https://pypi.org/project/ai-assistant/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Downloads](https://img.shields.io/pypi/dm/ai-assistant.svg)](https://pypi.org/project/ai-assistant/)
+
 [English](#english) | [中文](#中文)
 
 ---
@@ -21,6 +26,18 @@ A local AI assistant that solves three major pain points for ordinary users when
 - **CLI Interface**: Full-featured command line tool
 
 ### Installation
+
+**From PyPI (recommended):**
+
+```bash
+# Install basic version
+pip install ai-assistant
+
+# Install with GUI support
+pip install ai-assistant[gui]
+```
+
+**From source:**
 
 ```bash
 # Clone the repository
@@ -131,6 +148,18 @@ MIT License
 - **CLI界面**：功能完整的命令行工具
 
 ### 安装
+
+**从 PyPI 安装（推荐）：**
+
+```bash
+# 安装基础版本
+pip install ai-assistant
+
+# 安装带GUI支持的版本
+pip install ai-assistant[gui]
+```
+
+**从源码安装：**
 
 ```bash
 # 克隆仓库

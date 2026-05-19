@@ -1,6 +1,8 @@
 """隐私保护模块"""
 
+import io
 import re
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -8,7 +10,10 @@ from rich.console import Console
 
 from .config import config
 
-console = Console()
+# 使用 UTF-8 + replace 错误处理，兼容 Windows 中文环境
+console = Console(file=io.TextIOWrapper(
+    sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
+) if sys.platform == "win32" and hasattr(sys.stdout, "buffer") else None)
 
 
 @dataclass
