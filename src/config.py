@@ -27,6 +27,13 @@ DEFAULT_CONFIG = {
             "model": "llama3",
             "temperature": 0.7,
         },
+        "mimo": {
+            "api_key": "",
+            "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+            "model": "mimo-v2.5-pro",
+            "max_tokens": 4096,
+            "temperature": 0.7,
+        },
     },
     "default_provider": "openai",
     "privacy": {
@@ -155,8 +162,8 @@ class Config:
 
     def set_default_provider(self, provider: str) -> None:
         """设置默认提供商"""
-        if provider not in ("openai", "claude", "ollama"):
-            raise ValueError("提供商必须是 openai, claude 或 ollama")
+        if provider not in ("openai", "claude", "ollama", "mimo"):
+            raise ValueError("提供商必须是 openai, claude, ollama 或 mimo")
         self.set("default_provider", provider)
 
     def get_budget_alert(self) -> float:

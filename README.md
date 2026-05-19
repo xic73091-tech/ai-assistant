@@ -24,7 +24,7 @@ A local AI assistant that solves three major pain points for ordinary users when
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ai-assistant.git
+git clone https://github.com/xic73091-tech/ai-assistant.git
 cd ai-assistant
 
 # Install basic version
@@ -134,7 +134,7 @@ MIT License
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/ai-assistant.git
+git clone https://github.com/xic73091-tech/ai-assistant.git
 cd ai-assistant
 
 # 安装基础版本

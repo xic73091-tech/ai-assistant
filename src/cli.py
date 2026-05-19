@@ -19,6 +19,7 @@ from .i18n import i18n
 from .privacy import privacy_protector
 from .providers.base import Message
 from .providers.claude import ClaudeProvider
+from .providers.mimo import MiMoProvider
 from .providers.ollama import OllamaProvider
 from .providers.openai import OpenAIProvider
 from .storage import storage
@@ -40,6 +41,8 @@ def get_provider(provider_name: Optional[str] = None):
         return ClaudeProvider(provider_config)
     elif name == "ollama":
         return OllamaProvider(provider_config)
+    elif name == "mimo":
+        return MiMoProvider(provider_config)
     else:
         raise ValueError(f"不支持的提供商: {name}")
 
