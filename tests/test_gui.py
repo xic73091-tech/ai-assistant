@@ -3,13 +3,24 @@
 import sys
 import os
 
+import pytest
+
 # 确保项目根目录在路径中
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+try:
+    import PyQt6
+    HAS_PYQT6 = True
+except ImportError:
+    HAS_PYQT6 = False
 
+skip_no_pyqt6 = pytest.mark.skipif(not HAS_PYQT6, reason="PyQt6未安装")
+
+
+@skip_no_pyqt6
 def test_gui_imports():
     """测试GUI模块可以正常导入"""
-    from src.gui.styles import (
+    from ai_assistant.gui.styles import (
         Theme, get_app_stylesheet, get_message_style, get_nav_button_stylesheet,
         get_current_theme, set_current_theme, toggle_theme,
         get_toolbar_stylesheet, get_input_stylesheet, get_chat_background_color,
@@ -17,19 +28,20 @@ def test_gui_imports():
         get_history_stylesheet, get_primary_button_stylesheet,
         get_send_button_stylesheet, get_avatar_stylesheet, get_chart_colors,
     )
-    from src.gui.chat_widget import (
+    from ai_assistant.gui.chat_widget import (
         ChatWidget, ChatWorker, MessageBubble, MarkdownRenderer, SyntaxHighlighter,
     )
-    from src.gui.settings_dialog import SettingsDialog
-    from src.gui.cost_widget import CostWidget, StatCard, BarChartWidget
-    from src.gui.main_window import MainWindow, NavButton
-    from src.gui.app import run_gui
+    from ai_assistant.gui.settings_dialog import SettingsDialog
+    from ai_assistant.gui.cost_widget import CostWidget, StatCard, BarChartWidget
+    from ai_assistant.gui.main_window import MainWindow, NavButton
+    from ai_assistant.gui.app import run_gui
     print("所有GUI模块导入成功")
 
 
+@skip_no_pyqt6
 def test_markdown_renderer():
     """测试Markdown渲染器"""
-    from src.gui.chat_widget import MarkdownRenderer
+    from ai_assistant.gui.chat_widget import MarkdownRenderer
 
     # 测试标题
     html = MarkdownRenderer.to_html("# Hello")
@@ -112,9 +124,10 @@ def test_markdown_renderer():
     print("Markdown渲染器测试通过")
 
 
+@skip_no_pyqt6
 def test_syntax_highlighter():
     """测试语法高亮器"""
-    from src.gui.chat_widget import SyntaxHighlighter
+    from ai_assistant.gui.chat_widget import SyntaxHighlighter
 
     # 测试Python高亮
     code = "def hello():\n    print('hello')"
@@ -153,9 +166,10 @@ def test_syntax_highlighter():
     print("语法高亮器测试通过")
 
 
+@skip_no_pyqt6
 def test_styles():
     """测试样式模块"""
-    from src.gui.styles import (
+    from ai_assistant.gui.styles import (
         Theme, get_app_stylesheet, get_message_style, get_nav_button_stylesheet,
         get_current_theme, set_current_theme, toggle_theme,
         get_toolbar_stylesheet, get_input_stylesheet, get_chat_background_color,
@@ -253,12 +267,12 @@ def test_styles():
 
 def test_backend_integration():
     """测试后端模块集成"""
-    from src.config import config
-    from src.storage import storage
-    from src.cost_tracker import cost_tracker
-    from src.privacy import privacy_protector
-    from src.templates.manager import TemplateManager
-    from src.providers.base import Message, ChatResponse, Usage
+    from ai_assistant.config import config
+    from ai_assistant.storage import storage
+    from ai_assistant.cost_tracker import cost_tracker
+    from ai_assistant.privacy import privacy_protector
+    from ai_assistant.templates.manager import TemplateManager
+    from ai_assistant.providers.base import Message, ChatResponse, Usage
 
     # 测试配置
     assert config.get_default_provider() in ("openai", "claude", "ollama", "mimo")
@@ -296,9 +310,10 @@ def test_backend_integration():
     print("后端模块集成测试通过")
 
 
+@skip_no_pyqt6
 def test_provider_integration():
     """测试提供商集成（GUI层面）"""
-    from src.gui.chat_widget import ChatWidget
+    from ai_assistant.gui.chat_widget import ChatWidget
 
     # 测试提供商模型映射
     assert "openai" in ChatWidget.PROVIDER_MODELS

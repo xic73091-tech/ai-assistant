@@ -3,6 +3,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QFont, QIcon
 from PyQt6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QMenuBar,
     QMessageBox,
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
 )
 
+from .. import __version__
 from ..config import config
 from .chat_widget import ChatWidget
 from .cost_widget import CostWidget
@@ -49,7 +51,11 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AI Assistant - 本地化AI助手")
-        self.setMinimumSize(1000, 680)
+        # 基于屏幕分辨率设置最小尺寸，适配不同显示器
+        screen = QApplication.primaryScreen().geometry()
+        width = max(800, min(1000, int(screen.width() * 0.6)))
+        height = max(500, min(680, int(screen.height() * 0.7)))
+        self.setMinimumSize(width, height)
         self._setup_ui()
         self._create_menu_bar()
         self._create_toolbar()
@@ -63,9 +69,10 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # 左侧导航栏
+        # 左侧导航栏（宽度在resizeEvent中动态调整）
         self.nav_panel = QWidget()
-        self.nav_panel.setFixedWidth(180)
+        self.nav_panel.setMinimumWidth(150)
+        self.nav_panel.setMaximumWidth(250)
         self.nav_panel.setStyleSheet(get_nav_stylesheet())
         nav_layout = QVBoxLayout(self.nav_panel)
         nav_layout.setContentsMargins(8, 12, 8, 12)
@@ -96,7 +103,7 @@ class MainWindow(QMainWindow):
         nav_layout.addStretch()
 
         # 版本信息
-        version_label = QLabel("v0.2.0")
+        version_label = QLabel(f"v{__version__}")
         version_label.setStyleSheet(
             f"color: {get_label_color(secondary=True)}; font-size: 11px; padding: 8px 12px;"
         )
@@ -120,6 +127,12 @@ class MainWindow(QMainWindow):
         self.nav_chat.setChecked(index == 0)
         self.nav_cost.setChecked(index == 1)
         self.nav_settings.setChecked(False)
+
+    def resizeEvent(self, event):
+        """窗口大小改变时动态调整导航栏宽度"""
+        super().resizeEvent(event)
+        nav_width = max(150, min(250, int(event.size().width() * 0.15)))
+        self.nav_panel.setFixedWidth(nav_width)
 
     def _open_settings(self):
         self.nav_chat.setChecked(False)

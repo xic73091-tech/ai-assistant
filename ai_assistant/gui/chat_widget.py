@@ -569,7 +569,7 @@ class ChatWidget(QWidget):
         self.input_field.setStyleSheet(get_input_stylesheet())
 
         self.send_btn = QPushButton("发送")
-        self.send_btn.setFixedSize(60, 40)
+        self.send_btn.setMinimumSize(60, 40)
         self.send_btn.setStyleSheet(get_send_button_stylesheet())
 
         input_layout.addWidget(self.input_field)
@@ -579,7 +579,9 @@ class ChatWidget(QWidget):
         chat_layout.addWidget(input_area, 0)
 
         splitter.addWidget(chat_panel)
-        splitter.setSizes([200, 600])
+        # 使用比例而非固定像素，初始25%/75%
+        total_width = max(800, self.width() if self.width() > 0 else 1000)
+        splitter.setSizes([int(total_width * 0.25), int(total_width * 0.75)])
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
 

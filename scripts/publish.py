@@ -66,8 +66,8 @@ def check_version():
             pyproject_version = line.split("=")[1].strip().strip('"')
             break
 
-    # 从 src/__init__.py 读取版本
-    init_path = PROJECT_ROOT / "src" / "__init__.py"
+    # 从 ai_assistant/__init__.py 读取版本
+    init_path = PROJECT_ROOT / "ai_assistant" / "__init__.py"
     init_content = init_path.read_text(encoding="utf-8")
     init_version = None
     for line in init_content.splitlines():
@@ -76,7 +76,7 @@ def check_version():
             break
 
     print(f"  pyproject.toml: {pyproject_version}")
-    print(f"  src/__init__.py: {init_version}")
+    print(f"  ai_assistant/__init__.py: {init_version}")
 
     if pyproject_version != init_version:
         print("警告: 版本号不一致!", file=sys.stderr)

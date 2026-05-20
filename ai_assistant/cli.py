@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from . import __version__
 from .config import config
 from .cost_tracker import cost_tracker
 from .export import exporter
@@ -30,26 +31,45 @@ from .web_search import web_searcher
 
 
 def _setup_windows_encoding():
-    """修复Windows中文环境下的编码问题"""
+    """修复Windows中文环境下的编码问题
+
+    核心策略：
+    1. 设置环境变量 PYTHONIOENCODING，确保子进程也使用UTF-8
+    2. 先切换控制台代码页，再重新配置Python标准流
+    3. 使用独立的文件描述符避免与 sys.stdout 状态冲突
+    """
+    if sys.platform != "win32":
+        return
+
+    # 设置环境变量，影响后续所有子进程和 asyncio 的默认编码
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+
+    # 切换控制台代码页到UTF-8（65001）
+    os.system("chcp 65001 >nul 2>&1")
+
+    # 重新配置标准流编码，errors="replace" 防止不可编码字符导致崩溃
+    for stream_name in ("stdout", "stderr", "stdin"):
+        stream = getattr(sys, stream_name)
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _create_console() -> Console:
+    """创建 Rich Console
+
+    Windows 下直接使用 sys.stdout（已通过 reconfigure 设置 UTF-8），
+    不创建额外的 TextIOWrapper，避免文件描述符生命周期冲突。
+    """
     if sys.platform == "win32":
-        # 切换控制台代码页到UTF-8
-        os.system("chcp 65001 >nul 2>&1")
-        # 重新配置标准流的编码
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stdin, "reconfigure"):
-            sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+        return Console(file=sys.stdout, force_terminal=True)
+    return Console()
 
 
 # 启动时立即修复编码
 _setup_windows_encoding()
 
-# 使用 replace 错误处理，避免 emoji 等特殊字符导致 UnicodeEncodeError
-console = Console(file=io.TextIOWrapper(
-    sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
-) if sys.platform == "win32" and hasattr(sys.stdout, "buffer") else None)
+# 创建 Console 实例
+console = _create_console()
 template_manager = TemplateManager()
 
 
@@ -71,7 +91,7 @@ def get_provider(provider_name: Optional[str] = None):
 
 
 @click.group()
-@click.version_option(version="0.2.0", prog_name="ai-assistant")
+@click.version_option(version=__version__, prog_name="ai-assistant")
 def main():
     """AI Assistant - 本地化AI助手
 

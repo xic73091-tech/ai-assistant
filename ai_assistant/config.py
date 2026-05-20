@@ -1,5 +1,6 @@
 """配置管理模块"""
 
+import copy
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -74,7 +75,7 @@ class Config:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 self._config = yaml.safe_load(f) or {}
         else:
-            self._config = DEFAULT_CONFIG.copy()
+            self._config = copy.deepcopy(DEFAULT_CONFIG)
             self._save_config()
 
         # 环境变量覆盖

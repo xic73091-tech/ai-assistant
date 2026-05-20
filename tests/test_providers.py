@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.providers.base import BaseProvider, ChatResponse, Message, Usage
+from ai_assistant.providers.base import BaseProvider, ChatResponse, Message, Usage
 
 
 # ========== 基础数据类测试 ==========
@@ -90,7 +90,9 @@ class TestBaseProviderHelpers:
             async def chat_stream(self, messages, model=None, temperature=None, max_tokens=None):
                 yield ""
 
-        return ConcreteProvider(config or {"model": "test-model", "temperature": 0.5, "max_tokens": 2048})
+        if config is None:
+            config = {"model": "test-model", "temperature": 0.5, "max_tokens": 2048}
+        return ConcreteProvider(config)
 
     def test_get_model_from_config(self):
         """从配置获取模型"""
@@ -203,22 +205,22 @@ class TestOpenAIProvider:
     def test_init_requires_api_key(self):
         """缺少API密钥抛异常"""
         with pytest.raises(ValueError, match="API密钥未配置"):
-            from src.providers.openai import OpenAIProvider
+            from ai_assistant.providers.openai import OpenAIProvider
             OpenAIProvider({})
 
-    @patch("src.providers.openai.AsyncOpenAI")
+    @patch("ai_assistant.providers.openai.AsyncOpenAI")
     def test_init_with_api_key(self, mock_openai_class):
         """有API密钥正常初始化"""
-        from src.providers.openai import OpenAIProvider
+        from ai_assistant.providers.openai import OpenAIProvider
         provider = OpenAIProvider({"api_key": "sk-test", "model": "gpt-4o"})
         assert provider.name == "openai"
         mock_openai_class.assert_called_once_with(api_key="sk-test")
 
-    @patch("src.providers.openai.AsyncOpenAI")
+    @patch("ai_assistant.providers.openai.AsyncOpenAI")
     @pytest.mark.asyncio
     async def test_chat(self, mock_openai_class):
         """测试chat方法"""
-        from src.providers.openai import OpenAIProvider
+        from ai_assistant.providers.openai import OpenAIProvider
 
         # 设置mock响应
         mock_client = AsyncMock()
@@ -243,18 +245,18 @@ class TestOpenAIProvider:
         assert response.usage.total_tokens == 15
         assert response.finish_reason == "stop"
 
-    @patch("src.providers.openai.AsyncOpenAI")
+    @patch("ai_assistant.providers.openai.AsyncOpenAI")
     def test_calculate_cost(self, mock_openai_class):
         """OpenAI成本计算"""
-        from src.providers.openai import OpenAIProvider
+        from ai_assistant.providers.openai import OpenAIProvider
         usage = Usage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
         cost = OpenAIProvider.calculate_cost(usage, "gpt-4o")
         assert cost == pytest.approx(12.50, abs=0.01)
 
-    @patch("src.providers.openai.AsyncOpenAI")
+    @patch("ai_assistant.providers.openai.AsyncOpenAI")
     def test_calculate_cost_mini(self, mock_openai_class):
         """GPT-4o-mini成本计算"""
-        from src.providers.openai import OpenAIProvider
+        from ai_assistant.providers.openai import OpenAIProvider
         usage = Usage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
         cost = OpenAIProvider.calculate_cost(usage, "gpt-4o-mini")
         assert cost == pytest.approx(0.75, abs=0.01)
@@ -269,21 +271,21 @@ class TestClaudeProvider:
     def test_init_requires_api_key(self):
         """缺少API密钥抛异常"""
         with pytest.raises(ValueError, match="API密钥未配置"):
-            from src.providers.claude import ClaudeProvider
+            from ai_assistant.providers.claude import ClaudeProvider
             ClaudeProvider({})
 
-    @patch("src.providers.claude.anthropic")
+    @patch("ai_assistant.providers.claude.anthropic")
     def test_init_with_api_key(self, mock_anthropic):
         """有API密钥正常初始化"""
-        from src.providers.claude import ClaudeProvider
+        from ai_assistant.providers.claude import ClaudeProvider
         provider = ClaudeProvider({"api_key": "sk-ant-test", "model": "claude-sonnet-4-20250514"})
         assert provider.name == "claude"
 
-    @patch("src.providers.claude.anthropic")
+    @patch("ai_assistant.providers.claude.anthropic")
     @pytest.mark.asyncio
     async def test_chat(self, mock_anthropic):
         """测试chat方法"""
-        from src.providers.claude import ClaudeProvider
+        from ai_assistant.providers.claude import ClaudeProvider
 
         mock_client = AsyncMock()
         mock_anthropic.AsyncAnthropic.return_value = mock_client
@@ -304,11 +306,11 @@ class TestClaudeProvider:
         assert response.provider == "claude"
         assert response.usage.total_tokens == 15
 
-    @patch("src.providers.claude.anthropic")
+    @patch("ai_assistant.providers.claude.anthropic")
     @pytest.mark.asyncio
     async def test_chat_with_system_message(self, mock_anthropic):
         """带系统消息的chat"""
-        from src.providers.claude import ClaudeProvider
+        from ai_assistant.providers.claude import ClaudeProvider
 
         mock_client = AsyncMock()
         mock_anthropic.AsyncAnthropic.return_value = mock_client
@@ -333,10 +335,10 @@ class TestClaudeProvider:
         call_kwargs = mock_client.messages.create.call_args
         assert call_kwargs[1]["system"] == "你是一个助手"
 
-    @patch("src.providers.claude.anthropic")
+    @patch("ai_assistant.providers.claude.anthropic")
     def test_calculate_cost(self, mock_anthropic):
         """Claude成本计算"""
-        from src.providers.claude import ClaudeProvider
+        from ai_assistant.providers.claude import ClaudeProvider
         usage = Usage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
         cost = ClaudeProvider.calculate_cost(usage, "claude-sonnet-4-20250514")
         assert cost == pytest.approx(18.00, abs=0.01)
@@ -348,26 +350,26 @@ class TestClaudeProvider:
 class TestOllamaProvider:
     """测试Ollama提供商"""
 
-    @patch("src.providers.ollama.httpx.AsyncClient")
+    @patch("ai_assistant.providers.ollama.httpx.AsyncClient")
     def test_init(self, mock_client_class):
         """初始化Ollama"""
-        from src.providers.ollama import OllamaProvider
+        from ai_assistant.providers.ollama import OllamaProvider
         provider = OllamaProvider({"base_url": "http://localhost:11434", "model": "llama3"})
         assert provider.name == "ollama"
         assert provider.base_url == "http://localhost:11434"
 
-    @patch("src.providers.ollama.httpx.AsyncClient")
+    @patch("ai_assistant.providers.ollama.httpx.AsyncClient")
     def test_init_default_url(self, mock_client_class):
         """默认URL"""
-        from src.providers.ollama import OllamaProvider
+        from ai_assistant.providers.ollama import OllamaProvider
         provider = OllamaProvider({})
         assert provider.base_url == "http://localhost:11434"
 
-    @patch("src.providers.ollama.httpx.AsyncClient")
+    @patch("ai_assistant.providers.ollama.httpx.AsyncClient")
     @pytest.mark.asyncio
     async def test_chat(self, mock_client_class):
         """测试chat方法"""
-        from src.providers.ollama import OllamaProvider
+        from ai_assistant.providers.ollama import OllamaProvider
 
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
@@ -392,19 +394,19 @@ class TestOllamaProvider:
         assert response.usage.completion_tokens == 5
         assert response.finish_reason == "stop"
 
-    @patch("src.providers.ollama.httpx.AsyncClient")
+    @patch("ai_assistant.providers.ollama.httpx.AsyncClient")
     def test_calculate_cost_zero(self, mock_client_class):
         """Ollama本地模型成本为0"""
-        from src.providers.ollama import OllamaProvider
+        from ai_assistant.providers.ollama import OllamaProvider
         usage = Usage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
         cost = OllamaProvider.calculate_cost(usage, "llama3")
         assert cost == 0.0
 
-    @patch("src.providers.ollama.httpx.AsyncClient")
+    @patch("ai_assistant.providers.ollama.httpx.AsyncClient")
     @pytest.mark.asyncio
     async def test_is_available(self, mock_client_class):
         """检查服务可用性"""
-        from src.providers.ollama import OllamaProvider
+        from ai_assistant.providers.ollama import OllamaProvider
 
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
@@ -417,11 +419,11 @@ class TestOllamaProvider:
         result = await provider.is_available()
         assert result is True
 
-    @patch("src.providers.ollama.httpx.AsyncClient")
+    @patch("ai_assistant.providers.ollama.httpx.AsyncClient")
     @pytest.mark.asyncio
     async def test_is_not_available(self, mock_client_class):
         """服务不可用"""
-        from src.providers.ollama import OllamaProvider
+        from ai_assistant.providers.ollama import OllamaProvider
 
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
@@ -431,11 +433,11 @@ class TestOllamaProvider:
         result = await provider.is_available()
         assert result is False
 
-    @patch("src.providers.ollama.httpx.AsyncClient")
+    @patch("ai_assistant.providers.ollama.httpx.AsyncClient")
     @pytest.mark.asyncio
     async def test_list_models(self, mock_client_class):
         """列出模型"""
-        from src.providers.ollama import OllamaProvider
+        from ai_assistant.providers.ollama import OllamaProvider
 
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client

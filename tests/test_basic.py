@@ -7,10 +7,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import Config
-from src.privacy import PrivacyProtector
-from src.templates.manager import TemplateManager
-from src.storage import Storage
+from ai_assistant.config import Config
+from ai_assistant.privacy import PrivacyProtector
+from ai_assistant.templates.manager import TemplateManager
+from ai_assistant.storage import Storage
 
 
 class TestConfig:
@@ -205,20 +205,20 @@ class TestProviderBase:
 
     def test_message_dataclass(self):
         """Message数据类"""
-        from src.providers.base import Message
+        from ai_assistant.providers.base import Message
         msg = Message(role="user", content="hello")
         assert msg.role == "user"
         assert msg.content == "hello"
 
     def test_usage_dataclass(self):
         """Usage数据类"""
-        from src.providers.base import Usage
+        from ai_assistant.providers.base import Usage
         usage = Usage(prompt_tokens=10, completion_tokens=20, total_tokens=30)
         assert usage.total_tokens == 30
 
     def test_chat_response_dataclass(self):
         """ChatResponse数据类"""
-        from src.providers.base import ChatResponse, Usage
+        from ai_assistant.providers.base import ChatResponse, Usage
         usage = Usage(prompt_tokens=10, completion_tokens=20, total_tokens=30)
         resp = ChatResponse(
             content="hi", model="gpt-4o", usage=usage, provider="openai"
@@ -228,7 +228,7 @@ class TestProviderBase:
 
     def test_cost_calculation(self):
         """成本计算"""
-        from src.providers.base import BaseProvider, Usage
+        from ai_assistant.providers.base import BaseProvider, Usage
         usage = Usage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
         cost = BaseProvider.calculate_cost(usage, "gpt-4o")
         assert cost > 0

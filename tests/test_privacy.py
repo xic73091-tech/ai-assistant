@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.privacy import PrivacyProtector, SensitiveInfo
+from ai_assistant.privacy import PrivacyProtector, SensitiveInfo
 
 
 class TestPrivacyLevel:
@@ -16,7 +16,7 @@ class TestPrivacyLevel:
 
     def test_default_level_medium(self):
         """默认隐私级别为medium"""
-        with patch("src.privacy.config") as mock_config:
+        with patch("ai_assistant.privacy.config") as mock_config:
             mock_config.get_privacy_level.return_value = "medium"
             protector = PrivacyProtector()
             assert protector.level == "medium"
@@ -50,7 +50,7 @@ class TestPrivacyLevel:
         assert "phone" not in protector.enabled_levels
         assert "email" not in protector.enabled_levels
 
-    @patch("src.privacy.config")
+    @patch("ai_assistant.privacy.config")
     def test_set_level(self, mock_config):
         """动态设置隐私级别"""
         protector = PrivacyProtector(level="low")

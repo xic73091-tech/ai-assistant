@@ -1,6 +1,5 @@
 """隐私保护模块"""
 
-import io
 import re
 import sys
 from dataclasses import dataclass
@@ -10,10 +9,7 @@ from rich.console import Console
 
 from .config import config
 
-# 使用 UTF-8 + replace 错误处理，兼容 Windows 中文环境
-console = Console(file=io.TextIOWrapper(
-    sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
-) if sys.platform == "win32" and hasattr(sys.stdout, "buffer") else None)
+console = Console(file=sys.stdout, force_terminal=True) if sys.platform == "win32" else Console()
 
 
 @dataclass
@@ -56,7 +52,7 @@ class PrivacyProtector:
             "mask": lambda m: m.split(":")[0] + ": ********" if ":" in m else "密码: ********",
         },
         "ip_address": {
-            "pattern": r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+            "pattern": r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)",
             "description": "IP地址",
             "mask": lambda m: m[:m.rfind(".")] + ".***",
         },
@@ -78,6 +74,7 @@ class PrivacyProtector:
     def detect(self, text: str) -> list[SensitiveInfo]:
         """检测敏感信息"""
         results = []
+        matched_spans = []
         for info_type in self.enabled_levels:
             pattern_info = self.PATTERNS[info_type]
             for match in re.finditer(pattern_info["pattern"], text):
@@ -85,13 +82,23 @@ class PrivacyProtector:
                 # 排除明显不是敏感信息的匹配
                 if self._is_false_positive(info_type, value):
                     continue
+                start, end = match.start(), match.end()
+                # 跳过与已匹配位置重叠的结果
+                overlap = False
+                for ms, me in matched_spans:
+                    if start < me and end > ms:
+                        overlap = True
+                        break
+                if overlap:
+                    continue
                 masked = pattern_info["mask"](value)
                 results.append(SensitiveInfo(
                     type=info_type,
                     value=value,
                     masked=masked,
-                    position=(match.start(), match.end()),
+                    position=(start, end),
                 ))
+                matched_spans.append((start, end))
         return results
 
     def _is_false_positive(self, info_type: str, value: str) -> bool:

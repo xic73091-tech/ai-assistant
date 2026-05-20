@@ -5,6 +5,8 @@ import sys
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
+from .. import __version__
+
 
 def run_gui():
     """启动GUI应用"""
@@ -15,7 +17,7 @@ def run_gui():
 
     app = QApplication(sys.argv)
     app.setApplicationName("AI Assistant")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("守诚知")
 
     # 设置默认字体

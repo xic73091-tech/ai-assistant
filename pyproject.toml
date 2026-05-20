@@ -79,15 +79,15 @@ Issues = "https://github.com/xic73091-tech/ai-assistant/issues"
 Changelog = "https://github.com/xic73091-tech/ai-assistant/blob/main/CHANGELOG.md"
 
 [project.scripts]
-ai-assistant = "src.cli:main"
-ai-assistant-gui = "src.gui.app:run_gui"
+ai-assistant = "ai_assistant.cli:main"
+ai-assistant-gui = "ai_assistant.gui.app:run_gui"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["ai_assistant"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "src/",
+    "ai_assistant/",
     "LICENSE",
     "README.md",
     "CHANGELOG.md",

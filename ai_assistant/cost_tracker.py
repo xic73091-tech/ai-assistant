@@ -1,6 +1,5 @@
 """成本追踪模块"""
 
-import io
 import sys
 from datetime import datetime
 from typing import Any, Optional
@@ -12,10 +11,7 @@ from .config import config
 from .providers.base import Usage
 from .storage import storage
 
-# 使用 UTF-8 + replace 错误处理，兼容 Windows 中文环境
-console = Console(file=io.TextIOWrapper(
-    sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True
-) if sys.platform == "win32" and hasattr(sys.stdout, "buffer") else None)
+console = Console(file=sys.stdout, force_terminal=True) if sys.platform == "win32" else Console()
 
 
 class CostTracker:
@@ -59,7 +55,7 @@ class CostTracker:
         end_date: Optional[str] = None,
     ) -> dict[str, Any]:
         """获取成本统计"""
-        return storage.get_cost_stats(start_date, end_date)
+        return storage.get_cost_stats(start_date=start_date, end_date=end_date)
 
     def get_monthly_summary(self) -> dict[str, Any]:
         """获取本月摘要"""

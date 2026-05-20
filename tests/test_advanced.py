@@ -3,15 +3,16 @@
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.i18n import I18n, i18n, TRANSLATIONS
-from src.web_search import WebSearcher, DuckDuckGoSearch, SearchResult, SearchResponse
-from src.file_handler import FileHandler, FileContent
-from src.export import Exporter
-from src.storage import Storage
+from ai_assistant.i18n import I18n, i18n, TRANSLATIONS
+from ai_assistant.web_search import WebSearcher, DuckDuckGoSearch, SearchResult, SearchResponse
+from ai_assistant.file_handler import FileHandler, FileContent
+from ai_assistant.export import Exporter
+from ai_assistant.storage import Storage
 
 
 def test_i18n():
@@ -263,59 +264,61 @@ def test_export():
         db_path = Path(f.name)
 
     try:
-        storage = Storage(db_path)
+        test_storage = Storage(db_path)
 
         # 创建测试数据
-        conv_id = storage.create_conversation("Test Chat", "openai", "gpt-4o")
-        storage.add_message(conv_id, "user", "Hello", 10, 0.001)
-        storage.add_message(conv_id, "assistant", "Hi there! How can I help?", 20, 0.002)
-        storage.add_message(conv_id, "user", "What's the weather?", 15, 0.0015)
+        conv_id = test_storage.create_conversation("Test Chat", "openai", "gpt-4o")
+        test_storage.add_message(conv_id, "user", "Hello", 10, 0.001)
+        test_storage.add_message(conv_id, "assistant", "Hi there! How can I help?", 20, 0.002)
+        test_storage.add_message(conv_id, "user", "What's the weather?", 15, 0.0015)
 
-        # 测试Markdown导出
-        with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as f:
-            md_path = f.name
+        # 用patch将exporter内部的storage替换为测试的storage
+        with patch("ai_assistant.export.storage", test_storage):
+            # 测试Markdown导出
+            with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as f:
+                md_path = f.name
 
-        try:
-            result_path = exporter.export_conversation(conv_id, "md", md_path)
-            assert result_path == md_path
-            content = Path(md_path).read_text(encoding="utf-8")
-            assert "Test Chat" in content
-            assert "Hello" in content
-            assert "Hi there" in content
-        finally:
-            Path(md_path).unlink(missing_ok=True)
+            try:
+                result_path = exporter.export_conversation(conv_id, "md", md_path)
+                assert result_path == md_path
+                content = Path(md_path).read_text(encoding="utf-8")
+                assert "Test Chat" in content
+                assert "Hello" in content
+                assert "Hi there" in content
+            finally:
+                Path(md_path).unlink(missing_ok=True)
 
-        # 测试HTML导出
-        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
-            html_path = f.name
+            # 测试HTML导出
+            with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+                html_path = f.name
 
-        try:
-            result_path = exporter.export_conversation(conv_id, "html", html_path)
-            content = Path(html_path).read_text(encoding="utf-8")
-            assert "<!DOCTYPE html>" in content
-            assert "Test Chat" in content
-            assert "Hello" in content
-        finally:
-            Path(html_path).unlink(missing_ok=True)
+            try:
+                result_path = exporter.export_conversation(conv_id, "html", html_path)
+                content = Path(html_path).read_text(encoding="utf-8")
+                assert "<!DOCTYPE html>" in content
+                assert "Test Chat" in content
+                assert "Hello" in content
+            finally:
+                Path(html_path).unlink(missing_ok=True)
 
-        # 测试TXT导出
-        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
-            txt_path = f.name
+            # 测试TXT导出
+            with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+                txt_path = f.name
 
-        try:
-            result_path = exporter.export_conversation(conv_id, "txt", txt_path)
-            content = Path(txt_path).read_text(encoding="utf-8")
-            assert "Test Chat" in content
-            assert "Hello" in content
-        finally:
-            Path(txt_path).unlink(missing_ok=True)
+            try:
+                result_path = exporter.export_conversation(conv_id, "txt", txt_path)
+                content = Path(txt_path).read_text(encoding="utf-8")
+                assert "Test Chat" in content
+                assert "Hello" in content
+            finally:
+                Path(txt_path).unlink(missing_ok=True)
 
-        # 测试不存在的对话
-        try:
-            exporter.export_conversation(99999, "md", "/tmp/test.md")
-            assert False, "Should raise ValueError"
-        except ValueError:
-            pass
+            # 测试不存在的对话
+            try:
+                exporter.export_conversation(99999, "md", "/tmp/test.md")
+                assert False, "Should raise ValueError"
+            except ValueError:
+                pass
 
         print("[OK] 导出模块测试通过")
 
